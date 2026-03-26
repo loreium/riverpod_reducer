@@ -4,22 +4,36 @@ A pure reducer pattern for [Riverpod](https://riverpod.dev) notifiers.
 
 ## The Problem
 
-Riverpod's `build()` conflates reactive subscriptions with state initialization. When a watched dependency changes, `build()` re-runs and your internal state resets:
+Riverpod's `build()` conflates reactive subscriptions with state initialization. This isn't an issue for simple providers, but it breaks down for **view models** -- a very common pattern in app development -- where you mix internal UI state with external reactive dependencies.
+
+Consider a form screen that tracks user input (tabs, text fields, checkboxes) while also reacting to external data (current user, theme, permissions). In vanilla Riverpod, you're forced to put both in `build()`:
 
 ```dart
-// Vanilla Riverpod: build() watches AND initializes
 class FormNotifier extends Notifier<FormState> {
   @override
   FormState build() {
-    final user = ref.watch(userProvider); // reactive dep
-    return FormState(user: user, selectedTab: 0); // tab resets on every user change!
+    final user = ref.watch(userProvider);       // external dep
+    final config = ref.watch(configProvider);    // external dep
+    return FormState(
+      user: user,
+      config: config,
+      selectedTab: 0,    // internal state -- resets!
+      searchQuery: '',   // internal state -- resets!
+      isDirty: false,    // internal state -- resets!
+    );
   }
 }
 ```
 
+Every time `userProvider` or `configProvider` changes, `build()` re-runs and all internal state is lost. The selected tab jumps back to 0, the search query clears, the dirty flag resets. You can work around this with `listenSelf`, manual caching, or splitting into multiple providers -- but these are all workarounds for a fundamental design mismatch.
+
+The root cause: `build()` serves two purposes that shouldn't be coupled. It both **subscribes to dependencies** and **initializes state**. When one triggers, the other re-executes.
+
 ## The Solution
 
-`riverpod_reducer` separates concerns: `initialState()` for defaults, `bindings()` for reactive deps, `reduce()` for all state transitions:
+`riverpod_reducer` is a lightweight version of the classical store pattern (Redux, Elm) adapted for the Riverpod world and simplified down to what you actually need: a single base class with three methods.
+
+External dependency changes are mapped to typed events via `bindings()` and routed through a pure `reduce(State, Event) -> State` function -- the same function that handles user-triggered events. The reducer doesn't care where the event came from.
 
 ```dart
 class FormNotifier extends ReducerNotifier<FormState, FormEvent> {
@@ -29,17 +43,20 @@ class FormNotifier extends ReducerNotifier<FormState, FormEvent> {
   @override
   void bindings() {
     bind(userProvider, (_, user) => UserLoaded(user));
+    bind(configProvider, (_, config) => ConfigUpdated(config));
   }
 
   @override
   FormState reduce(FormState state, FormEvent event) => switch (event) {
     UserLoaded(:final user) => state.copyWith(user: user),
+    ConfigUpdated(:final config) => state.copyWith(config: config),
     TabSelected(:final index) => state.copyWith(selectedTab: index),
+    SearchChanged(:final query) => state.copyWith(searchQuery: query),
   };
 }
 ```
 
-When `userProvider` changes, only `UserLoaded` fires through `reduce()`. The selected tab is preserved.
+When `userProvider` changes, only `UserLoaded` fires through `reduce()`. The selected tab, search query, and every other piece of internal state is preserved -- because `reduce()` only touches what the event tells it to.
 
 ## Quick Start
 
@@ -193,9 +210,12 @@ final provider = NotifierProvider.family<MyNotifier, MyState, String>(MyNotifier
 
 ## Why This Pattern
 
-- **Testable**: `reduce()` is a pure function. Test with zero mocking or framework setup.
-- **Predictable**: One function handles ALL state transitions. No hidden rebuilds, no state resets.
-- **Familiar**: If you know Redux, Elm, or Bloc events, you already know this.
+This is the classical store pattern (Redux, Elm, MVU) distilled to its simplest useful form for Riverpod. No action creators, no middleware chains, no boilerplate -- just `initialState`, `bindings`, and `reduce`.
+
+- **Testable**: `reduce()` is a pure function. Test every state transition with zero mocking, no `ProviderContainer`, no framework setup.
+- **Predictable**: One function handles ALL state transitions. No hidden rebuilds, no state resets, no scattered `state =` assignments across methods.
+- **View-model friendly**: Internal UI state and external reactive dependencies coexist without fighting each other. This is the primary use case.
+- **Familiar**: If you know Redux, Elm, or Bloc events, you already know this. If you don't, the API surface is three methods.
 
 ## Comparison
 
