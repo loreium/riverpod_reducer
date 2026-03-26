@@ -38,6 +38,19 @@ abstract class ReducerNotifier<S, E> extends Notifier<S> {
   /// returns the new state.
   ///
   /// Must be a pure function with no side effects, no async, no ref access.
+  ///
+  /// **Important:** For events originating from [bind]/[bindAsync], the
+  /// reducer must be **idempotent**: applying the same event to the same
+  /// state twice must return the same state. Use `copyWith`-style updates
+  /// (set the value) rather than incremental mutations (add to the value).
+  ///
+  /// ```dart
+  /// // Good — idempotent: applying UserLoaded('Alice') twice is harmless
+  /// UserLoaded(:final name) => state.copyWith(userName: name),
+  ///
+  /// // Bad — not idempotent: each replay adds a duplicate entry
+  /// ItemReceived(:final item) => state.copyWith(items: [...state.items, item]),
+  /// ```
   S reduce(S state, E event);
 
   /// Override to bind external providers via [bind] and [bindAsync].
@@ -85,6 +98,10 @@ abstract class ReducerNotifier<S, E> extends Notifier<S> {
   /// is captured on initialization. If [toEvent] returns `null`, the
   /// dispatch is skipped.
   ///
+  /// **Warning:** Riverpod may re-deliver the current value on provider
+  /// rebuild, so binding events can be replayed. The [reduce] function must
+  /// handle these events idempotently — see [reduce] for details.
+  ///
   /// ```dart
   /// @override
   /// void bindings() {
@@ -106,6 +123,8 @@ abstract class ReducerNotifier<S, E> extends Notifier<S> {
   ///
   /// Similar to [bind], but typed for providers that expose [AsyncValue].
   /// If [toEvent] returns `null`, the dispatch is skipped.
+  ///
+  /// **Warning:** Binding events can be replayed — see [bind] and [reduce].
   ///
   /// ```dart
   /// @override
