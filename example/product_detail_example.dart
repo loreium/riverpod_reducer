@@ -114,13 +114,18 @@ class ProductDetailNotifier
   @override
   ProductDetailState reduce(ProductDetailState state, ProductEvent event) =>
       switch (event) {
-        // Transitions FROM any state
-        ProductFetched(:final name, :final price) => ProductLoaded(
-          name: name,
-          price: price,
-          isFavorite: false,
-          quantity: 1,
-        ),
+        // Binding event — must be idempotent.
+        // Preserve internal state (isFavorite, quantity) if already loaded;
+        // only use defaults on the initial load.
+        ProductFetched(:final name, :final price) => switch (state) {
+          ProductLoaded() => state.copyWith(name: name, price: price),
+          _ => ProductLoaded(
+            name: name,
+            price: price,
+            isFavorite: false,
+            quantity: 1,
+          ),
+        },
         ProductFetchFailed(:final message) => ProductError(message),
         ProductRefreshed() => ProductLoading(),
 
