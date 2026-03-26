@@ -21,10 +21,14 @@ jobs:
       - run: dart test --coverage=coverage
       - run: dart pub global activate coverage
       - run: dart pub global run coverage:format_coverage --lcov --in=coverage --out=coverage/lcov.info --report-on=lib
+      - name: Convert LCOV to Cobertura
+        run: |
+          pip install lcov_cobertura
+          python -m lcov_cobertura coverage/lcov.info -o coverage/cobertura.xml
       - name: Code coverage summary
         uses: irongut/CodeCoverageSummary@v1.3.0
         with:
-          filename: coverage/lcov.info
+          filename: coverage/cobertura.xml
           format: markdown
           output: both
           badge: true
