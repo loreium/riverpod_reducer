@@ -1,0 +1,214 @@
+# riverpod_reducer
+
+A pure reducer pattern for [Riverpod](https://riverpod.dev) notifiers.
+
+## The Problem
+
+Riverpod's `build()` conflates reactive subscriptions with state initialization. When a watched dependency changes, `build()` re-runs and your internal state resets:
+
+```dart
+// Vanilla Riverpod: build() watches AND initializes
+class FormNotifier extends Notifier<FormState> {
+  @override
+  FormState build() {
+    final user = ref.watch(userProvider); // reactive dep
+    return FormState(user: user, selectedTab: 0); // tab resets on every user change!
+  }
+}
+```
+
+## The Solution
+
+`riverpod_reducer` separates concerns: `initialState()` for defaults, `bindings()` for reactive deps, `reduce()` for all state transitions:
+
+```dart
+class FormNotifier extends ReducerNotifier<FormState, FormEvent> {
+  @override
+  FormState initialState() => FormState.initial();
+
+  @override
+  void bindings() {
+    bind(userProvider, (_, user) => UserLoaded(user));
+  }
+
+  @override
+  FormState reduce(FormState state, FormEvent event) => switch (event) {
+    UserLoaded(:final user) => state.copyWith(user: user),
+    TabSelected(:final index) => state.copyWith(selectedTab: index),
+  };
+}
+```
+
+When `userProvider` changes, only `UserLoaded` fires through `reduce()`. The selected tab is preserved.
+
+## Quick Start
+
+Add to your `pubspec.yaml`:
+
+```yaml
+dependencies:
+  riverpod_reducer: ^0.1.0
+```
+
+### Define events and state
+
+```dart
+sealed class CounterEvent {}
+class Increment extends CounterEvent {}
+class Decrement extends CounterEvent {}
+```
+
+### Create the notifier
+
+```dart
+class CounterNotifier extends ReducerNotifier<int, CounterEvent> {
+  @override
+  int initialState() => 0;
+
+  @override
+  int reduce(int state, CounterEvent event) => switch (event) {
+    Increment() => state + 1,
+    Decrement() => state - 1,
+  };
+}
+
+final counterProvider =
+    NotifierProvider<CounterNotifier, int>(CounterNotifier.new);
+```
+
+### Dispatch from UI
+
+```dart
+// In a widget:
+ref.read(counterProvider.notifier).dispatch(Increment());
+```
+
+## Core Concepts
+
+### `initialState()`
+
+Returns the default state. No watches, no listens, just a value.
+
+### `reduce(State state, Event event)`
+
+Pure function. ALL state transitions go through here. No side effects, no async, no ref access. This is what makes the pattern testable.
+
+### `bindings()`
+
+Declares reactive subscriptions. Called automatically after `initialState()`. Uses `bind()` and `bindAsync()` to map provider changes to events:
+
+```dart
+@override
+void bindings() {
+  bind(userProvider, (_, user) => UserLoaded(user));
+  bindAsync<Config>(configProvider, (_, value) => switch (value) {
+    AsyncData(:final value) => ConfigLoaded(value),
+    AsyncError(:final error) => ConfigError(error),
+    _ => null, // skip loading -- return null to skip dispatch
+  });
+}
+```
+
+### `dispatch(Event event)`
+
+Triggers `reduce()` and updates state. Public, so widgets and methods can call it.
+
+### `applyEvent(State state, Event event)`
+
+Middleware hook. Override for logging or conditional event handling:
+
+```dart
+@override
+MyState applyEvent(MyState state, MyEvent event) {
+  print('Event: ${event.runtimeType}');
+  return reduce(state, event);
+}
+```
+
+## Handling Side Effects
+
+Side effects live in methods. They dispatch events. State changes stay in `reduce()`:
+
+```dart
+Future<void> save() async {
+  dispatch(SaveStarted());
+  try {
+    await ref.read(apiProvider).save(state.data);
+    dispatch(SaveSucceeded());
+  } catch (e) {
+    dispatch(SaveFailed(e));
+  }
+}
+```
+
+## Testing
+
+### Test `reduce()` in isolation -- no framework needed
+
+```dart
+test('reduce is pure and testable', () {
+  final notifier = CounterNotifier();
+  expect(notifier.reduce(0, Increment()), 1);
+  expect(notifier.reduce(5, Decrement()), 4);
+});
+```
+
+### Integration test with ProviderContainer
+
+```dart
+test('dispatch updates state', () {
+  final container = ProviderContainer.test();
+  container.read(counterProvider.notifier).dispatch(Increment());
+  expect(container.read(counterProvider), 1);
+});
+```
+
+### Test bindings with overrides
+
+```dart
+test('binding reflects dependency', () {
+  final container = ProviderContainer.test(
+    overrides: [userProvider.overrideWith((ref) => 'TestUser')],
+  );
+  expect(container.read(formProvider).userName, 'TestUser');
+});
+```
+
+## Auto-Dispose and Family
+
+Riverpod 3.x unifies all notifier types. Use `ReducerNotifier` with any provider variant:
+
+```dart
+// Auto-dispose
+final provider = NotifierProvider.autoDispose<MyNotifier, MyState>(MyNotifier.new);
+
+// Family
+class MyNotifier extends ReducerNotifier<MyState, MyEvent> {
+  MyNotifier(this.id);
+  final String id;
+  // ...
+}
+final provider = NotifierProvider.family<MyNotifier, MyState, String>(MyNotifier.new);
+```
+
+## Why This Pattern
+
+- **Testable**: `reduce()` is a pure function. Test with zero mocking or framework setup.
+- **Predictable**: One function handles ALL state transitions. No hidden rebuilds, no state resets.
+- **Familiar**: If you know Redux, Elm, or Bloc events, you already know this.
+
+## Comparison
+
+| Feature | Riverpod Notifier | Bloc | riverpod_reducer |
+|---|---|---|---|
+| Pure reducer | No | No (async handlers) | Yes |
+| Reactive deps | Yes (watch in build) | No (manual streams) | Yes (bind) |
+| State resets on dep change | Yes | N/A | No |
+| Typed events | No | Yes | Yes |
+| Testable without framework | No | Partially | Yes |
+
+## Compatibility
+
+- Dart SDK `>=3.7.0`
+- `riverpod: ^3.0.0`
+- Works with `flutter_riverpod` (riverpod is a transitive dependency)

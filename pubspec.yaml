@@ -1,0 +1,19 @@
+name: riverpod_reducer
+description: A pure reducer pattern for Riverpod notifiers. Separates state initialization from reactive bindings with a single reduce(State, Event) → State function.
+version: 0.1.0
+repository: https://github.com/user/riverpod_reducer
+topics:
+  - riverpod
+  - state-management
+  - reducer
+
+environment:
+  sdk: ^3.7.0
+
+dependencies:
+  riverpod: ^3.0.0
+  meta: ^1.11.0
+
+dev_dependencies:
+  lints: ^6.0.0
+  test: ^1.25.6
