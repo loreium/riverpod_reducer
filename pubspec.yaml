@@ -2,7 +2,6 @@ name: riverpod_reducer
 description: A pure reducer pattern for Riverpod notifiers. Separates state initialization from reactive bindings with a single reduce(State, Event) → State function.
 version: 0.1.0
 repository: https://github.com/loreium/riverpod_reducer
-publish_to: loreium.app
 topics:
   - riverpod
   - state-management
