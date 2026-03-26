@@ -1,10 +1,10 @@
 # riverpod_reducer
 
-A pure reducer pattern for [Riverpod](https://riverpod.dev) notifiers.
+A pure reducer pattern for [Riverpod](https://riverpod.dev) notifiers. Requires Riverpod 3.x.
 
 ## The Problem
 
-Riverpod's `build()` conflates reactive subscriptions with state initialization. This isn't an issue for simple providers, but it breaks down for **view models** -- a very common pattern in app development -- where you mix internal UI state with external reactive dependencies.
+Riverpod's `build()` conflates reactive subscriptions with state initialization. This isn't an issue for simple providers, but it breaks down for **view models**, a very common pattern in app development, where you mix internal UI state with external reactive dependencies.
 
 Consider a form screen that tracks user input (tabs, text fields, checkboxes) while also reacting to external data (current user, theme, permissions). In vanilla Riverpod, you're forced to put both in `build()`:
 
@@ -17,15 +17,17 @@ class FormNotifier extends Notifier<FormState> {
     return FormState(
       user: user,
       config: config,
-      selectedTab: 0,    // internal state -- resets!
-      searchQuery: '',   // internal state -- resets!
-      isDirty: false,    // internal state -- resets!
+      selectedTab: 0,    // internal state: resets!
+      searchQuery: '',   // internal state: resets!
+      isDirty: false,    // internal state: resets!
     );
   }
 }
 ```
 
-Every time `userProvider` or `configProvider` changes, `build()` re-runs and all internal state is lost. The selected tab jumps back to 0, the search query clears, the dirty flag resets. You can work around this with `listenSelf`, manual caching, or splitting into multiple providers -- but these are all workarounds for a fundamental design mismatch.
+Every time `userProvider` or `configProvider` changes, `build()` re-runs and all internal state is lost. The selected tab jumps back to 0, the search query clears, the dirty flag resets.
+
+There are workarounds (`listenSelf`, manual state caching, `ref.listen` instead of `ref.watch`, splitting state across multiple providers) but they all break the view model pattern. Instead of one notifier that owns a screen's state, you end up with scattered listeners, manual synchronization logic, or a constellation of providers that have to be composed back together in the widget. The cure is worse than the disease.
 
 The root cause: `build()` serves two purposes that shouldn't be coupled. It both **subscribes to dependencies** and **initializes state**. When one triggers, the other re-executes.
 
@@ -33,7 +35,7 @@ The root cause: `build()` serves two purposes that shouldn't be coupled. It both
 
 `riverpod_reducer` is a lightweight version of the classical store pattern (Redux, Elm) adapted for the Riverpod world and simplified down to what you actually need: a single base class with three methods.
 
-External dependency changes are mapped to typed events via `bindings()` and routed through a pure `reduce(State, Event) -> State` function -- the same function that handles user-triggered events. The reducer doesn't care where the event came from.
+External dependency changes are mapped to typed events via `bindings()` and routed through a pure `reduce(State, Event) -> State` function. The same function that handles user-triggered events. The reducer doesn't care where the event came from.
 
 ```dart
 class FormNotifier extends ReducerNotifier<FormState, FormEvent> {
@@ -56,7 +58,7 @@ class FormNotifier extends ReducerNotifier<FormState, FormEvent> {
 }
 ```
 
-When `userProvider` changes, only `UserLoaded` fires through `reduce()`. The selected tab, search query, and every other piece of internal state is preserved -- because `reduce()` only touches what the event tells it to.
+When `userProvider` changes, only `UserLoaded` fires through `reduce()`. The selected tab, search query, and every other piece of internal state is preserved because `reduce()` only touches what the event tells it to.
 
 ## Quick Start
 
@@ -121,7 +123,7 @@ void bindings() {
   bindAsync<Config>(configProvider, (_, value) => switch (value) {
     AsyncData(:final value) => ConfigLoaded(value),
     AsyncError(:final error) => ConfigError(error),
-    _ => null, // skip loading -- return null to skip dispatch
+    _ => null, // return null to skip dispatch
   });
 }
 ```
@@ -160,7 +162,7 @@ Future<void> save() async {
 
 ## Testing
 
-### Test `reduce()` in isolation -- no framework needed
+### Test `reduce()` in isolation (no framework needed)
 
 ```dart
 test('reduce is pure and testable', () {
@@ -210,7 +212,7 @@ final provider = NotifierProvider.family<MyNotifier, MyState, String>(MyNotifier
 
 ## Why This Pattern
 
-This is the classical store pattern (Redux, Elm, MVU) distilled to its simplest useful form for Riverpod. No action creators, no middleware chains, no boilerplate -- just `initialState`, `bindings`, and `reduce`.
+This is the classical store pattern (Redux, Elm, MVU) distilled to its simplest useful form for Riverpod. No action creators, no middleware chains, no boilerplate. Just `initialState`, `bindings`, and `reduce`.
 
 - **Testable**: `reduce()` is a pure function. Test every state transition with zero mocking, no `ProviderContainer`, no framework setup.
 - **Predictable**: One function handles ALL state transitions. No hidden rebuilds, no state resets, no scattered `state =` assignments across methods.
