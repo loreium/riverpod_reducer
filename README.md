@@ -149,6 +149,20 @@ MyState applyEvent(MyState state, MyEvent event) {
 }
 ```
 
+## Idempotent Reducers for Bindings
+
+Riverpod may re-deliver the current value when a provider rebuilds, meaning binding events can be **replayed**. Your `reduce` function must handle binding events idempotently — applying the same event twice to the same state must produce the same state. In practice this means: **set values, don't accumulate them**.
+
+```dart
+// Good — idempotent: applying UserLoaded('Alice') twice is harmless
+UserLoaded(:final name) => state.copyWith(userName: name),
+
+// Bad — not idempotent: each replay adds a duplicate entry
+ItemReceived(:final item) => state.copyWith(items: [...state.items, item]),
+```
+
+This only applies to **bindings**. Events dispatched directly from UI callbacks or other one-shot actions (e.g. `dispatch(Increment())` on button press) are triggered exactly once by the caller and are not subject to replay.
+
 ## Handling Side Effects
 
 Side effects live in methods. They dispatch events. State changes stay in `reduce()`:
