@@ -1,6 +1,12 @@
 # riverpod_reducer
 
+[![CI](https://github.com/user/riverpod_reducer/actions/workflows/ci.yml/badge.svg)](https://github.com/user/riverpod_reducer/actions/workflows/ci.yml)
+[![codecov](https://codecov.io/gh/user/riverpod_reducer/graph/badge.svg)](https://codecov.io/gh/user/riverpod_reducer)
+[![preview](https://img.shields.io/badge/status-preview-orange)](https://github.com/user/riverpod_reducer)
+
 A pure reducer pattern for [Riverpod](https://riverpod.dev) notifiers. Requires Riverpod 3.x.
+
+> **Note:** This package is in preview. The API may change before 1.0.
 
 ## The Problem
 
