@@ -141,7 +141,7 @@ void bindings() {
 
 ### `dispatch(Event event)`
 
-Triggers `applyEvent()` → `reduce()` and updates state. Protected — call it from within named methods on your notifier, not directly from widgets. This keeps the notifier's public API explicit and discoverable. Marked `@visibleForTesting` so tests can call it directly.
+Triggers `applyEvent()` → `reduce()` and updates state. Protected — call it from within named methods on your notifier. Marked `@visibleForTesting` so tests can call it directly. For bloc-style notifiers, override to re-expose as public (see [Usage Patterns](#usage-patterns)).
 
 ### `applyEvent(State state, Event event)`
 
