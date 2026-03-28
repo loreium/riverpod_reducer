@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:riverpod/legacy.dart';
 import 'package:riverpod/misc.dart' show Override;
 import 'package:riverpod/riverpod.dart';
@@ -103,7 +105,7 @@ class LoggingNotifier extends ReducerNotifier<int, CounterEvent> {
   int initialState() => 0;
 
   @override
-  int applyEvent(int state, CounterEvent event) {
+  Future<int> applyEvent(int state, CounterEvent event) async {
     eventLog.add(event);
     return reduce(state, event);
   }
@@ -119,6 +121,34 @@ class LoggingNotifier extends ReducerNotifier<int, CounterEvent> {
 
 final loggingProvider = NotifierProvider<LoggingNotifier, int>(
   LoggingNotifier.new,
+);
+
+// --- Async notifier (delays in applyEvent) ---
+
+class AsyncCounterNotifier extends ReducerNotifier<int, CounterEvent> {
+  final List<CounterEvent> eventLog = [];
+
+  @override
+  int initialState() => 0;
+
+  @override
+  Future<int> applyEvent(int state, CounterEvent event) async {
+    eventLog.add(event);
+    await Future<void>.delayed(Duration(milliseconds: 10));
+    return reduce(state, event);
+  }
+
+  @override
+  int reduce(int state, CounterEvent event) => switch (event) {
+    Increment() => state + 1,
+    Decrement() => state - 1,
+    SetCount(:final value) => value,
+    Reset() => 0,
+  };
+}
+
+final asyncCounterProvider = NotifierProvider<AsyncCounterNotifier, int>(
+  AsyncCounterNotifier.new,
 );
 
 // --- Helper to create ProviderContainer with cleanup ---

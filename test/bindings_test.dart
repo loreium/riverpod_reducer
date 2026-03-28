@@ -5,17 +5,21 @@ import 'package:test/test.dart';
 
 import 'helpers.dart';
 
+/// Pumps the event loop so async dispatches from bindings complete.
+Future<void> pump() => Future<void>.delayed(Duration.zero);
+
 void main() {
   group('bind()', () {
     test('initial state reflects bound dependency via fireImmediately', () {
       final container = createContainer();
       final state = container.read(boundProvider);
       // externalCountProvider defaults to 10, bind fires immediately
+      // During build, events are folded through reduce synchronously
       expect(state.externalCount, 10);
       expect(state.internalCount, 0);
     });
 
-    test('state updates when bound dependency changes', () {
+    test('state updates when bound dependency changes', () async {
       final container = createContainer();
 
       // Initial
@@ -23,25 +27,27 @@ void main() {
 
       // Change the external dependency
       container.read(externalCountProvider.notifier).state = 42;
+      await pump();
       expect(container.read(boundProvider).externalCount, 42);
     });
 
-    test('user dispatch works alongside bindings', () {
+    test('user dispatch works alongside bindings', () async {
       final container = createContainer();
       final notifier = container.read(boundProvider.notifier);
 
       expect(container.read(boundProvider).internalCount, 0);
-      notifier.dispatch(InternalIncrement());
+      await notifier.dispatch(InternalIncrement());
       expect(container.read(boundProvider).internalCount, 1);
 
       // External still works
       container.read(externalCountProvider.notifier).state = 99;
+      await pump();
       final state = container.read(boundProvider);
       expect(state.externalCount, 99);
       expect(state.internalCount, 1);
     });
 
-    test('toEvent returning null skips dispatch', () {
+    test('toEvent returning null skips dispatch', () async {
       // Notifier that only binds when value > 0
       final sourceProvider = StateProvider<int>((ref) => -1);
 
@@ -56,14 +62,16 @@ void main() {
 
       // Set to positive — event fires
       container.read(sourceProvider.notifier).state = 5;
+      await pump();
       expect(container.read(provider), 5);
 
       // Set to negative — event skipped
       container.read(sourceProvider.notifier).state = -3;
+      await pump();
       expect(container.read(provider), 5); // unchanged
     });
 
-    test('multiple bindings on same notifier', () {
+    test('multiple bindings on same notifier', () async {
       final providerA = StateProvider<int>((ref) => 1);
       final providerB = StateProvider<String>((ref) => 'hello');
 
@@ -77,9 +85,11 @@ void main() {
       expect(state.b, 'hello');
 
       container.read(providerA.notifier).state = 99;
+      await pump();
       expect(container.read(provider).a, 99);
 
       container.read(providerB.notifier).state = 'world';
+      await pump();
       expect(container.read(provider).b, 'world');
     });
   });

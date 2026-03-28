@@ -146,9 +146,12 @@ class ProductDetailNotifier
         },
       };
 
-  /// Side effect: refresh the product data.
-  void refresh() {
-    dispatch(ProductRefreshed());
+  void toggleFavorite() => dispatch(FavoriteToggled());
+  void incrementQuantity() => dispatch(QuantityIncremented());
+  void decrementQuantity() => dispatch(QuantityDecremented());
+
+  Future<void> refresh() async {
+    await dispatch(ProductRefreshed());
     ref.invalidate(productDataProvider(productId));
     // bindAsync will fire again when the provider re-resolves
   }
@@ -174,19 +177,19 @@ void main() async {
   print(container.read(productDetailProvider(productId)));
   // => ProductLoaded(Widget Pro, $29.99, fav=false, qty=1)
 
-  // User interactions — only affect Loaded state
+  // User interactions via named methods
   final notifier = container.read(productDetailProvider(productId).notifier);
 
-  notifier.dispatch(FavoriteToggled());
+  notifier.toggleFavorite();
   print(container.read(productDetailProvider(productId)));
   // => ProductLoaded(Widget Pro, $29.99, fav=true, qty=1)
 
-  notifier.dispatch(QuantityIncremented());
-  notifier.dispatch(QuantityIncremented());
+  notifier.incrementQuantity();
+  notifier.incrementQuantity();
   print(container.read(productDetailProvider(productId)));
   // => ProductLoaded(Widget Pro, $29.99, fav=true, qty=3)
 
-  notifier.dispatch(QuantityDecremented());
+  notifier.decrementQuantity();
   print(container.read(productDetailProvider(productId)));
   // => ProductLoaded(Widget Pro, $29.99, fav=true, qty=2)
 

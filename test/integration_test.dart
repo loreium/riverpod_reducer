@@ -5,9 +5,12 @@ import 'package:test/test.dart';
 
 import 'helpers.dart';
 
+/// Pumps the event loop so async dispatches from bindings complete.
+Future<void> pump() => Future<void>.delayed(Duration.zero);
+
 void main() {
   group('integration', () {
-    test('full lifecycle: init → bind → dispatch → state', () {
+    test('full lifecycle: init → bind → dispatch → state', () async {
       final container = createContainer();
 
       // Build: initialState + bindings(bind externalCountProvider=10)
@@ -16,11 +19,14 @@ void main() {
       expect(state.internalCount, 0);
 
       // User dispatch
-      container.read(boundProvider.notifier).dispatch(InternalIncrement());
+      await container
+          .read(boundProvider.notifier)
+          .dispatch(InternalIncrement());
       expect(container.read(boundProvider).internalCount, 1);
 
       // External dependency change
       container.read(externalCountProvider.notifier).state = 20;
+      await pump();
       final updated = container.read(boundProvider);
       expect(updated.externalCount, 20);
       expect(updated.internalCount, 1); // preserved
@@ -35,7 +41,7 @@ void main() {
       expect(state.externalCount, 999);
     });
 
-    test('auto-dispose notifier works', () {
+    test('auto-dispose notifier works', () async {
       final autoProvider = NotifierProvider.autoDispose<CounterNotifier, int>(
         CounterNotifier.new,
       );
@@ -43,7 +49,7 @@ void main() {
       final container = createContainer();
       final sub = container.listen(autoProvider, (_, _) {});
 
-      container.read(autoProvider.notifier).dispatch(Increment());
+      await container.read(autoProvider.notifier).dispatch(Increment());
       expect(container.read(autoProvider), 1);
 
       sub.close();
@@ -51,7 +57,7 @@ void main() {
       // (Riverpod internal behavior — just verify it doesn't throw)
     });
 
-    test('realistic form notifier scenario', () {
+    test('realistic form notifier scenario', () async {
       final userProvider = StateProvider<String>((ref) => 'Alice');
 
       final formProvider = NotifierProvider<_FormNotifier, _FormState>(
@@ -65,19 +71,22 @@ void main() {
       expect(state.isSubmitting, false);
 
       // User types email
-      container.read(formProvider.notifier).dispatch(_EmailChanged('a@b.com'));
+      await container
+          .read(formProvider.notifier)
+          .dispatch(_EmailChanged('a@b.com'));
       expect(container.read(formProvider).email, 'a@b.com');
 
       // External user changes
       container.read(userProvider.notifier).state = 'Bob';
+      await pump();
       expect(container.read(formProvider).userName, 'Bob');
       expect(container.read(formProvider).email, 'a@b.com'); // preserved
 
       // Submit flow
-      container.read(formProvider.notifier).dispatch(_SubmitStarted());
+      await container.read(formProvider.notifier).dispatch(_SubmitStarted());
       expect(container.read(formProvider).isSubmitting, true);
 
-      container.read(formProvider.notifier).dispatch(_SubmitSucceeded());
+      await container.read(formProvider.notifier).dispatch(_SubmitSucceeded());
       expect(container.read(formProvider).isSubmitting, false);
       expect(container.read(formProvider).error, isNull);
     });

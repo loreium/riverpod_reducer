@@ -1,3 +1,5 @@
 .dart_tool/
 pubspec.lock
 coverage/
+.claude/settings.local.json
+
