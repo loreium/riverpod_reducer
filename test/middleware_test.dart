@@ -6,14 +6,14 @@ import 'helpers.dart';
 
 void main() {
   group('applyEvent() middleware', () {
-    test('logs all events in order', () {
+    test('logs all events in order', () async {
       final container = createContainer();
       final notifier = container.read(loggingProvider.notifier);
 
-      notifier.dispatch(Increment());
-      notifier.dispatch(Increment());
-      notifier.dispatch(SetCount(10));
-      notifier.dispatch(Decrement());
+      await notifier.dispatch(Increment());
+      await notifier.dispatch(Increment());
+      await notifier.dispatch(SetCount(10));
+      await notifier.dispatch(Decrement());
 
       expect(notifier.eventLog, hasLength(4));
       expect(notifier.eventLog[0], isA<Increment>());
@@ -22,28 +22,28 @@ void main() {
       expect(notifier.eventLog[3], isA<Decrement>());
     });
 
-    test('state still updates correctly through middleware', () {
+    test('state still updates correctly through middleware', () async {
       final container = createContainer();
       final notifier = container.read(loggingProvider.notifier);
 
-      notifier.dispatch(Increment());
-      notifier.dispatch(Increment());
-      notifier.dispatch(Increment());
+      await notifier.dispatch(Increment());
+      await notifier.dispatch(Increment());
+      await notifier.dispatch(Increment());
       expect(container.read(loggingProvider), 3);
     });
 
-    test('middleware can block events by returning same state', () {
+    test('middleware can block events by returning same state', () async {
       final container = createContainer();
       final provider = NotifierProvider<_BlockingNotifier, int>(
         _BlockingNotifier.new,
       );
       final notifier = container.read(provider.notifier);
 
-      notifier.dispatch(Increment());
+      await notifier.dispatch(Increment());
       expect(container.read(provider), 1);
 
       // Decrement is blocked by middleware
-      notifier.dispatch(Decrement());
+      await notifier.dispatch(Decrement());
       expect(container.read(provider), 1); // unchanged
     });
   });
@@ -55,7 +55,7 @@ class _BlockingNotifier extends ReducerNotifier<int, CounterEvent> {
   int initialState() => 0;
 
   @override
-  int applyEvent(int state, CounterEvent event) {
+  Future<int> applyEvent(int state, CounterEvent event) async {
     if (event is Decrement) return state; // block
     return reduce(state, event);
   }

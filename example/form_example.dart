@@ -87,15 +87,17 @@ class FormNotifier extends ReducerNotifier<FormState, FormEvent> {
     ),
   };
 
+  void changeEmail(String email) => dispatch(EmailChanged(email));
+
   /// Side effects live in methods — they dispatch events, not mutate state.
   Future<void> submit() async {
-    dispatch(SubmitStarted());
+    await dispatch(SubmitStarted());
     try {
       // await ref.read(apiProvider).submitForm(state.email);
       await Future<void>.delayed(Duration(milliseconds: 100)); // simulate API
-      dispatch(SubmitSucceeded());
+      await dispatch(SubmitSucceeded());
     } catch (e) {
-      dispatch(SubmitFailed(e.toString()));
+      await dispatch(SubmitFailed(e.toString()));
     }
   }
 }
@@ -108,13 +110,12 @@ final formProvider = NotifierProvider<FormNotifier, FormState>(
 
 void main() async {
   final container = ProviderContainer();
+  final notifier = container.read(formProvider.notifier);
 
   print(container.read(formProvider)); // user: Alice (from binding)
 
   // User types email — internal state, not affected by external deps
-  container
-      .read(formProvider.notifier)
-      .dispatch(EmailChanged('alice@example.com'));
+  notifier.changeEmail('alice@example.com');
   print(container.read(formProvider));
 
   // External user changes — email is preserved!
@@ -122,7 +123,7 @@ void main() async {
   print(container.read(formProvider)); // user: Bob, email: alice@example.com
 
   // Submit flow
-  await container.read(formProvider.notifier).submit();
+  await notifier.submit();
   print(container.read(formProvider)); // submitting: false
 
   container.dispose();

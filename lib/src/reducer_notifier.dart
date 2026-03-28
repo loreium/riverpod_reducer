@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:meta/meta.dart';
 import 'package:riverpod/misc.dart' show ProviderListenable;
 import 'package:riverpod/riverpod.dart';
@@ -28,6 +30,8 @@ import 'package:riverpod/riverpod.dart';
 abstract class ReducerNotifier<S, E> extends Notifier<S> {
   bool _initializing = false;
   final List<E> _pendingEvents = [];
+  Future<void>? _queue;
+  int _generation = 0;
 
   /// Returns the initial state. Called once per build cycle.
   ///
@@ -61,32 +65,91 @@ abstract class ReducerNotifier<S, E> extends Notifier<S> {
   void bindings() {}
 
   /// Middleware hook. Override to intercept events for logging, analytics,
-  /// or conditional event handling.
+  /// conditional event handling, or **async side effects**.
   ///
   /// Default implementation delegates to [reduce].
   ///
+  /// Events are processed sequentially — subsequent [dispatch] calls queue
+  /// until the current event completes.
+  /// Use `this.state = ...` to emit intermediate states during async work.
+  ///
+  /// During [build], pending events from [bind]/[bindAsync] are folded
+  /// through [reduce] directly, bypassing this hook.
+  ///
   /// ```dart
   /// @override
-  /// MyState applyEvent(MyState state, MyEvent event) {
-  ///   log('Event: ${event.runtimeType}');
+  /// Future<MyState> applyEvent(MyState state, MyEvent event) async {
+  ///   if (event is SubmitForm) {
+  ///     this.state = state.copyWith(isLoading: true);
+  ///     await api.submit(state.data);
+  ///     return state.copyWith(isLoading: false);
+  ///   }
   ///   return reduce(state, event);
   /// }
   /// ```
   @protected
-  S applyEvent(S state, E event) => reduce(state, event);
+  Future<S> applyEvent(S state, E event) async => reduce(state, event);
 
   /// Dispatches an [event], triggering [applyEvent] → [reduce].
   ///
-  /// During initialization (inside [build]), events are queued and applied
-  /// after [bindings] completes. After initialization, events are applied
-  /// immediately and the state is updated if the new state is not identical
-  /// to the current state.
-  void dispatch(E event) {
+  /// This method is `@protected` — call it from within public methods on
+  /// your notifier, not directly from widgets:
+  ///
+  /// ```dart
+  /// // Cubit style — side effects in the method:
+  /// Future<void> submit() async {
+  ///   await dispatch(SubmitStarted());
+  ///   try {
+  ///     await api.submit(state.data);
+  ///     await dispatch(SubmitSucceeded());
+  ///   } catch (e) {
+  ///     await dispatch(SubmitFailed(e.toString()));
+  ///   }
+  /// }
+  ///
+  /// // Bloc style — re-expose dispatch as public:
+  /// @override
+  /// Future<void> dispatch(MyEvent event) => super.dispatch(event);
+  /// ```
+  ///
+  /// During initialization (inside [build]), events are queued and folded
+  /// through [reduce] after [bindings] completes.
+  ///
+  /// After initialization, events are processed sequentially — if a previous
+  /// event is still being handled, the new event queues behind it.
+  @protected
+  @visibleForTesting
+  Future<void> dispatch(E event) {
     if (_initializing) {
       _pendingEvents.add(event);
-      return;
+      return Future.value();
     }
-    final next = applyEvent(state, event);
+
+    final prev = _queue;
+    final future =
+        prev != null
+            ? prev.catchError((_) {}).then((_) => _processEvent(event))
+            : _processEvent(event);
+
+    _queue = future;
+    // Clear the queue when this future completes, but only if no new events
+    // were chained onto it in the meantime (which would have replaced _queue
+    // with a different future).
+    future.then(
+      (_) {
+        if (identical(_queue, future)) _queue = null;
+      },
+      onError: (_) {
+        if (identical(_queue, future)) _queue = null;
+      },
+    );
+    return future;
+  }
+
+  Future<void> _processEvent(E event) async {
+    final gen = _generation;
+    final next = await applyEvent(state, event);
+    if (gen != _generation) return; // stale after rebuild, discard
     if (!identical(next, state)) {
       state = next;
     }
@@ -151,20 +214,22 @@ abstract class ReducerNotifier<S, E> extends Notifier<S> {
   ///
   /// Calls [initialState], then [bindings] (which queues initial events
   /// via [bind]/[bindAsync]), then folds all queued events through
-  /// [applyEvent] to produce the final initial state.
+  /// [reduce] to produce the final initial state.
   ///
   /// **Do not override.** Implement [initialState] and [bindings] instead.
   @override
   @nonVirtual
   S build() {
+    _generation++;
     _initializing = true;
     _pendingEvents.clear();
+    _queue = null;
     final initial = initialState();
     bindings();
     _initializing = false;
     var s = initial;
     for (final event in _pendingEvents) {
-      s = applyEvent(s, event);
+      s = reduce(s, event);
     }
     _pendingEvents.clear();
     return s;

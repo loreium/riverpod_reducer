@@ -23,6 +23,10 @@ class CounterNotifier extends ReducerNotifier<int, CounterEvent> {
     Decrement() => state - 1,
     Reset() => 0,
   };
+
+  void increment() => dispatch(Increment());
+  void decrement() => dispatch(Decrement());
+  void reset() => dispatch(Reset());
 }
 
 final counterProvider = NotifierProvider<CounterNotifier, int>(
@@ -33,26 +37,27 @@ final counterProvider = NotifierProvider<CounterNotifier, int>(
 
 void main() {
   final container = ProviderContainer();
+  final notifier = container.read(counterProvider.notifier);
 
   // Read initial state
   print('Initial: ${container.read(counterProvider)}'); // 0
 
-  // Dispatch events
-  container.read(counterProvider.notifier).dispatch(Increment());
-  container.read(counterProvider.notifier).dispatch(Increment());
-  print('After 2x Increment: ${container.read(counterProvider)}'); // 2
+  // Call methods on the notifier
+  notifier.increment();
+  notifier.increment();
+  print('After 2x increment: ${container.read(counterProvider)}'); // 2
 
-  container.read(counterProvider.notifier).dispatch(Decrement());
-  print('After Decrement: ${container.read(counterProvider)}'); // 1
+  notifier.decrement();
+  print('After decrement: ${container.read(counterProvider)}'); // 1
 
-  container.read(counterProvider.notifier).dispatch(Reset());
-  print('After Reset: ${container.read(counterProvider)}'); // 0
+  notifier.reset();
+  print('After reset: ${container.read(counterProvider)}'); // 0
 
   // Test reduce() in isolation — no ProviderContainer needed:
-  final notifier = CounterNotifier();
-  assert(notifier.reduce(5, Increment()) == 6);
-  assert(notifier.reduce(5, Decrement()) == 4);
-  assert(notifier.reduce(99, Reset()) == 0);
+  final testNotifier = CounterNotifier();
+  assert(testNotifier.reduce(5, Increment()) == 6);
+  assert(testNotifier.reduce(5, Decrement()) == 4);
+  assert(testNotifier.reduce(99, Reset()) == 0);
   print('Pure reduce tests passed!');
 
   container.dispose();

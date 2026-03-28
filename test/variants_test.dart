@@ -4,6 +4,9 @@ import 'package:test/test.dart';
 
 import 'helpers.dart';
 
+/// Pumps the event loop so async dispatches from bindings complete.
+Future<void> pump() => Future<void>.delayed(Duration.zero);
+
 // --- Family notifier: initial state = constructor arg ---
 
 class FamilyCounterNotifier extends ReducerNotifier<int, CounterEvent> {
@@ -83,20 +86,20 @@ void main() {
       sub.close();
     });
 
-    test('dispatch updates state', () {
+    test('dispatch updates state', () async {
       final container = createContainer();
       final sub = container.listen(autoCounterProvider, (_, _) {});
 
-      container.read(autoCounterProvider.notifier).dispatch(Increment());
-      container.read(autoCounterProvider.notifier).dispatch(Increment());
+      await container.read(autoCounterProvider.notifier).dispatch(Increment());
+      await container.read(autoCounterProvider.notifier).dispatch(Increment());
       expect(container.read(autoCounterProvider), 2);
 
-      container.read(autoCounterProvider.notifier).dispatch(SetCount(10));
+      await container.read(autoCounterProvider.notifier).dispatch(SetCount(10));
       expect(container.read(autoCounterProvider), 10);
       sub.close();
     });
 
-    test('bindings fire on init and on dependency change', () {
+    test('bindings fire on init and on dependency change', () async {
       final autoBoundProvider =
           NotifierProvider.autoDispose<AutoDisposeBoundNotifier, BoundState>(
             AutoDisposeBoundNotifier.new,
@@ -110,10 +113,13 @@ void main() {
 
       // Dependency change propagates
       container.read(externalCountProvider.notifier).state = 50;
+      await pump();
       expect(container.read(autoBoundProvider).externalCount, 50);
 
       // User dispatch works alongside
-      container.read(autoBoundProvider.notifier).dispatch(InternalIncrement());
+      await container
+          .read(autoBoundProvider.notifier)
+          .dispatch(InternalIncrement());
       expect(container.read(autoBoundProvider).internalCount, 1);
 
       sub.close();
@@ -129,8 +135,12 @@ void main() {
 
       // First subscription
       final sub1 = container.listen(autoBoundProvider, (_, _) {});
-      container.read(autoBoundProvider.notifier).dispatch(InternalIncrement());
-      container.read(autoBoundProvider.notifier).dispatch(InternalIncrement());
+      await container
+          .read(autoBoundProvider.notifier)
+          .dispatch(InternalIncrement());
+      await container
+          .read(autoBoundProvider.notifier)
+          .dispatch(InternalIncrement());
       expect(container.read(autoBoundProvider).internalCount, 2);
       sub1.close();
 
@@ -161,27 +171,35 @@ void main() {
       expect(container.read(familyCounterProvider(0)), 0);
     });
 
-    test('different family keys have independent state', () {
+    test('different family keys have independent state', () async {
       final container = createContainer();
 
-      container.read(familyCounterProvider(10).notifier).dispatch(Increment());
-      container.read(familyCounterProvider(10).notifier).dispatch(Increment());
+      await container
+          .read(familyCounterProvider(10).notifier)
+          .dispatch(Increment());
+      await container
+          .read(familyCounterProvider(10).notifier)
+          .dispatch(Increment());
 
       expect(container.read(familyCounterProvider(10)), 12); // 10 + 2
       expect(container.read(familyCounterProvider(42)), 42); // untouched
     });
 
-    test('dispatch on one key does not affect another', () {
+    test('dispatch on one key does not affect another', () async {
       final container = createContainer();
 
-      container.read(familyCounterProvider(0).notifier).dispatch(SetCount(99));
-      container.read(familyCounterProvider(1).notifier).dispatch(Increment());
+      await container
+          .read(familyCounterProvider(0).notifier)
+          .dispatch(SetCount(99));
+      await container
+          .read(familyCounterProvider(1).notifier)
+          .dispatch(Increment());
 
       expect(container.read(familyCounterProvider(0)), 99);
       expect(container.read(familyCounterProvider(1)), 2); // 1 + 1
     });
 
-    test('bindings work per-family instance with different args', () {
+    test('bindings work per-family instance with different args', () async {
       final familyBoundProvider =
           NotifierProvider.family<FamilyBoundNotifier, BoundState, int>(
             FamilyBoundNotifier.new,
@@ -199,6 +217,7 @@ void main() {
 
       // Change dependency — both update with their own multiplier
       container.read(externalCountProvider.notifier).state = 5;
+      await pump();
       expect(container.read(familyBoundProvider(1)).externalCount, 5);
       expect(container.read(familyBoundProvider(3)).externalCount, 15);
     });
@@ -218,12 +237,14 @@ void main() {
       sub.close();
     });
 
-    test('independent state per key', () {
+    test('independent state per key', () async {
       final container = createContainer();
       final sub1 = container.listen(autoFamilyProvider(10), (_, _) {});
       final sub2 = container.listen(autoFamilyProvider(20), (_, _) {});
 
-      container.read(autoFamilyProvider(10).notifier).dispatch(Increment());
+      await container
+          .read(autoFamilyProvider(10).notifier)
+          .dispatch(Increment());
       expect(container.read(autoFamilyProvider(10)), 11);
       expect(container.read(autoFamilyProvider(20)), 20); // untouched
 
@@ -239,8 +260,12 @@ void main() {
       final sub10 = container.listen(autoFamilyProvider(10), (_, _) {});
 
       // Mutate both
-      container.read(autoFamilyProvider(5).notifier).dispatch(Increment());
-      container.read(autoFamilyProvider(10).notifier).dispatch(Increment());
+      await container
+          .read(autoFamilyProvider(5).notifier)
+          .dispatch(Increment());
+      await container
+          .read(autoFamilyProvider(10).notifier)
+          .dispatch(Increment());
       expect(container.read(autoFamilyProvider(5)), 6);
       expect(container.read(autoFamilyProvider(10)), 11);
 
@@ -261,7 +286,7 @@ void main() {
       sub10.close();
     });
 
-    test('bindings work with auto-dispose family', () {
+    test('bindings work with auto-dispose family', () async {
       final autoFamilyBoundProvider = NotifierProvider.autoDispose
           .family<FamilyBoundNotifier, BoundState, int>(
             FamilyBoundNotifier.new,
@@ -275,6 +300,7 @@ void main() {
 
       // Dependency change
       container.read(externalCountProvider.notifier).state = 7;
+      await pump();
       expect(container.read(autoFamilyBoundProvider(2)).externalCount, 14);
 
       sub.close();

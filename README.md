@@ -60,6 +60,9 @@ class FormNotifier extends ReducerNotifier<FormState, FormEvent> {
     TabSelected(:final index) => state.copyWith(selectedTab: index),
     SearchChanged(:final query) => state.copyWith(searchQuery: query),
   };
+
+  void selectTab(int index) => dispatch(TabSelected(index: index));
+  void search(String query) => dispatch(SearchChanged(query: query));
 }
 ```
 
@@ -94,17 +97,20 @@ class CounterNotifier extends ReducerNotifier<int, CounterEvent> {
     Increment() => state + 1,
     Decrement() => state - 1,
   };
+
+  void increment() => dispatch(Increment());
+  void decrement() => dispatch(Decrement());
 }
 
 final counterProvider =
     NotifierProvider<CounterNotifier, int>(CounterNotifier.new);
 ```
 
-### Dispatch from UI
+### Use from UI
 
 ```dart
 // In a widget:
-ref.read(counterProvider.notifier).dispatch(Increment());
+ref.read(counterProvider.notifier).increment();
 ```
 
 ## Core Concepts
@@ -135,23 +141,97 @@ void bindings() {
 
 ### `dispatch(Event event)`
 
-Triggers `reduce()` and updates state. Public, so widgets and methods can call it.
+Triggers `applyEvent()` → `reduce()` and updates state. Protected — call it from within named methods on your notifier. Marked `@visibleForTesting` so tests can call it directly. For bloc-style notifiers, override to re-expose as public (see [Usage Patterns](#usage-patterns)).
 
 ### `applyEvent(State state, Event event)`
 
-Middleware hook. Override for logging or conditional event handling:
+Async middleware hook. Override for logging, conditional event handling, or side effects:
 
 ```dart
 @override
-MyState applyEvent(MyState state, MyEvent event) {
-  print('Event: ${event.runtimeType}');
+Future<MyState> applyEvent(MyState state, MyEvent event) async {
+  if (event is SubmitForm) {
+    this.state = state.copyWith(isLoading: true);
+    await api.submit(state.data);
+    return state.copyWith(isLoading: false);
+  }
   return reduce(state, event);
+}
+```
+
+Events are processed sequentially — if a previous event is still being handled, new dispatches queue behind it.
+
+## Usage Patterns
+
+### Cubit Style — side effects in methods
+
+Named methods on the notifier handle async work and call `dispatch()` for state transitions. The `reduce()` function stays pure. This is the most common pattern.
+
+```dart
+class TodoNotifier extends ReducerNotifier<TodoState, TodoEvent> {
+  @override
+  TodoState initialState() => TodoState(todos: [], syncing: false);
+
+  @override
+  TodoState reduce(TodoState state, TodoEvent event) => switch (event) {
+    TodoAdded(:final text) => state.copyWith(todos: [...state.todos, text]),
+    SyncStarted() => state.copyWith(syncing: true),
+    SyncCompleted() => state.copyWith(syncing: false),
+    SyncFailed(:final message) => state.copyWith(syncing: false, error: message),
+  };
+
+  void addTodo(String text) => dispatch(TodoAdded(text));
+
+  Future<void> sync() async {
+    await dispatch(SyncStarted());
+    try {
+      await api.sync(state.todos);
+      await dispatch(SyncCompleted());
+    } catch (e) {
+      await dispatch(SyncFailed(e.toString()));
+    }
+  }
+}
+```
+
+### Bloc Style — side effects in `applyEvent`
+
+Re-expose `dispatch()` as public. All logic — including async side effects — lives in `applyEvent()`. Useful when you want every state transition to be event-driven and traceable.
+
+```dart
+class LoginNotifier extends ReducerNotifier<LoginState, LoginEvent> {
+  @override
+  LoginState initialState() => LoginInitial();
+
+  @override
+  Future<LoginState> applyEvent(LoginState state, LoginEvent event) async {
+    if (event is LoginSubmitted) {
+      this.state = LoginLoading(); // intermediate state
+      try {
+        final token = await auth.login(event.email, event.password);
+        return LoginSuccess(token: token);
+      } catch (e) {
+        return LoginFailure(message: e.toString());
+      }
+    }
+    return reduce(state, event);
+  }
+
+  @override
+  LoginState reduce(LoginState state, LoginEvent event) => switch (event) {
+    LoginSubmitted() => state, // handled in applyEvent
+    LoginReset() => LoginInitial(),
+  };
+
+  /// Re-expose dispatch as public for bloc-style event dispatch.
+  @override
+  Future<void> dispatch(LoginEvent event) => super.dispatch(event);
 }
 ```
 
 ## Idempotent Reducers for Bindings
 
-Riverpod may re-deliver the current value when a provider rebuilds, meaning binding events can be **replayed**. Your `reduce` function must handle binding events idempotently — applying the same event twice to the same state must produce the same state. In practice this means: **set values, don't accumulate them**.
+Riverpod may re-deliver the current value when a provider rebuilds, meaning binding events can be **replayed**. Your `reduce` function must handle binding events idempotently — applying the same event to the same state must produce the same state. In practice this means: **set values, don't accumulate them**.
 
 ```dart
 // Good — idempotent: applying UserLoaded('Alice') twice is harmless
@@ -161,23 +241,7 @@ UserLoaded(:final name) => state.copyWith(userName: name),
 ItemReceived(:final item) => state.copyWith(items: [...state.items, item]),
 ```
 
-This only applies to **bindings**. Events dispatched directly from UI callbacks or other one-shot actions (e.g. `dispatch(Increment())` on button press) are triggered exactly once by the caller and are not subject to replay.
-
-## Handling Side Effects
-
-Side effects live in methods. They dispatch events. State changes stay in `reduce()`:
-
-```dart
-Future<void> save() async {
-  dispatch(SaveStarted());
-  try {
-    await ref.read(apiProvider).save(state.data);
-    dispatch(SaveSucceeded());
-  } catch (e) {
-    dispatch(SaveFailed(e));
-  }
-}
-```
+This only applies to **bindings**. Events dispatched directly from UI callbacks or other one-shot actions (e.g. `notifier.increment()` on button press) are triggered exactly once by the caller and are not subject to replay.
 
 ## Testing
 
@@ -194,9 +258,9 @@ test('reduce is pure and testable', () {
 ### Integration test with ProviderContainer
 
 ```dart
-test('dispatch updates state', () {
+test('dispatch updates state', () async {
   final container = ProviderContainer.test();
-  container.read(counterProvider.notifier).dispatch(Increment());
+  await container.read(counterProvider.notifier).dispatch(Increment());
   expect(container.read(counterProvider), 1);
 });
 ```
