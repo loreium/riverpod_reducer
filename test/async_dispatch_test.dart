@@ -34,24 +34,27 @@ void main() {
       expect(notifier.eventLog[3], isA<Decrement>());
     });
 
-    test('intermediate state emission via this.state', () async {
-      final provider = NotifierProvider<_IntermediateNotifier, int>(
-        _IntermediateNotifier.new,
-      );
-      final container = createContainer();
-      final notifier = container.read(provider.notifier);
-      final states = <int>[];
+    test(
+      'cubit-style sequential dispatches produce correct state sequence',
+      () async {
+        final provider = NotifierProvider<_SequentialNotifier, int>(
+          _SequentialNotifier.new,
+        );
+        final container = createContainer();
+        final notifier = container.read(provider.notifier);
+        final states = <int>[];
 
-      container.listen(provider, (_, next) => states.add(next));
+        container.listen(provider, (_, next) => states.add(next));
 
-      await notifier.dispatch(SetCount(42));
+        await notifier.setCountWithLoading(42);
 
-      // Should have seen intermediate state (-1) then final state (42)
-      expect(states, [
-        -1, // intermediate
-        42, // final
-      ]);
-    });
+        // Should have seen loading sentinel (-1) then final value (42)
+        expect(states, [
+          -1, // from SetCount(-1)
+          42, // from SetCount(42)
+        ]);
+      },
+    );
 
     test(
       'error in async applyEvent does not break subsequent events',
@@ -143,13 +146,13 @@ class _VaryingDelayNotifier extends ReducerNotifier<List<String>, _ListEvent> {
   List<String> initialState() => [];
 
   @override
-  Future<List<String>> applyEvent(List<String> state, _ListEvent event) async {
+  Future<_ListEvent?> middleware(List<String> state, _ListEvent event) async {
     if (event is _Append) {
       await Future<void>.delayed(
         Duration(milliseconds: _delays[event.value] ?? 0),
       );
     }
-    return reduce(state, event);
+    return event;
   }
 
   @override
@@ -158,19 +161,16 @@ class _VaryingDelayNotifier extends ReducerNotifier<List<String>, _ListEvent> {
   };
 }
 
-/// Notifier that emits intermediate state during async applyEvent.
-class _IntermediateNotifier extends ReducerNotifier<int, CounterEvent> {
+/// Notifier that dispatches sequential events for intermediate state.
+class _SequentialNotifier extends ReducerNotifier<int, CounterEvent> {
   @override
   int initialState() => 0;
 
-  @override
-  Future<int> applyEvent(int state, CounterEvent event) async {
-    if (event is SetCount) {
-      this.state = -1; // intermediate state
-      await Future<void>.delayed(Duration(milliseconds: 10));
-      return event.value; // final state
-    }
-    return reduce(state, event);
+  /// Cubit-style: dispatch loading sentinel, then final value.
+  Future<void> setCountWithLoading(int value) async {
+    await dispatch(SetCount(-1)); // loading sentinel
+    await Future<void>.delayed(Duration(milliseconds: 10));
+    await dispatch(SetCount(value));
   }
 
   @override
@@ -182,19 +182,19 @@ class _IntermediateNotifier extends ReducerNotifier<int, CounterEvent> {
   };
 }
 
-/// Notifier whose async applyEvent throws for certain events.
+/// Notifier whose async middleware throws for certain events.
 class _ErrorNotifier extends ReducerNotifier<int, CounterEvent> {
   @override
   int initialState() => 0;
 
   @override
-  Future<int> applyEvent(int state, CounterEvent event) async {
+  Future<CounterEvent?> middleware(int state, CounterEvent event) async {
     if (event is SetCount && event.value < 0) {
       await Future<void>.delayed(Duration(milliseconds: 5));
       throw Exception('negative value not allowed');
     }
     await Future<void>.delayed(Duration(milliseconds: 5));
-    return reduce(state, event);
+    return event;
   }
 
   @override
@@ -206,18 +206,18 @@ class _ErrorNotifier extends ReducerNotifier<int, CounterEvent> {
   };
 }
 
-/// Notifier with mixed sync/async behavior in applyEvent.
+/// Notifier with mixed sync/async behavior in middleware.
 /// SetCount is async, everything else is sync.
 class _MixedNotifier extends ReducerNotifier<int, CounterEvent> {
   @override
   int initialState() => 0;
 
   @override
-  Future<int> applyEvent(int state, CounterEvent event) async {
+  Future<CounterEvent?> middleware(int state, CounterEvent event) async {
     if (event is SetCount) {
       await Future<void>.delayed(Duration(milliseconds: 10));
     }
-    return reduce(state, event);
+    return event;
   }
 
   @override

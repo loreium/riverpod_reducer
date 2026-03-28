@@ -141,21 +141,21 @@ void bindings() {
 
 ### `dispatch(Event event)`
 
-Triggers `applyEvent()` → `reduce()` and updates state. Protected — call it from within named methods on your notifier. Marked `@visibleForTesting` so tests can call it directly. For bloc-style notifiers, override to re-expose as public (see [Usage Patterns](#usage-patterns)).
+Triggers `middleware()` → `reduce()` and updates state. Protected — call it from within named methods on your notifier. Marked `@visibleForTesting` so tests can call it directly.
 
-### `applyEvent(State state, Event event)`
+### `middleware(State state, Event event)`
 
-Async middleware hook. Override for logging, conditional event handling, or side effects:
+Async event filter/transformer. Override to intercept, transform, or drop events before they reach `reduce()`:
+
+- Return the event (or a modified event) to pass it to `reduce()`
+- Return `null` to drop/block the event
 
 ```dart
 @override
-Future<MyState> applyEvent(MyState state, MyEvent event) async {
-  if (event is SubmitForm) {
-    this.state = state.copyWith(isLoading: true);
-    await api.submit(state.data);
-    return state.copyWith(isLoading: false);
-  }
-  return reduce(state, event);
+Future<MyEvent?> middleware(MyState state, MyEvent event) async {
+  logger.log(event);
+  if (event is Blocked) return null; // drop
+  return event;
 }
 ```
 
@@ -163,9 +163,9 @@ Events are processed sequentially — if a previous event is still being handled
 
 ## Usage Patterns
 
-### Cubit Style — side effects in methods
+### Side effects in methods
 
-Named methods on the notifier handle async work and call `dispatch()` for state transitions. The `reduce()` function stays pure. This is the most common pattern.
+Named methods on the notifier handle async work and call `dispatch()` for state transitions. The `reduce()` function stays pure.
 
 ```dart
 class TodoNotifier extends ReducerNotifier<TodoState, TodoEvent> {
@@ -191,41 +191,6 @@ class TodoNotifier extends ReducerNotifier<TodoState, TodoEvent> {
       await dispatch(SyncFailed(e.toString()));
     }
   }
-}
-```
-
-### Bloc Style — side effects in `applyEvent`
-
-Re-expose `dispatch()` as public. All logic — including async side effects — lives in `applyEvent()`. Useful when you want every state transition to be event-driven and traceable.
-
-```dart
-class LoginNotifier extends ReducerNotifier<LoginState, LoginEvent> {
-  @override
-  LoginState initialState() => LoginInitial();
-
-  @override
-  Future<LoginState> applyEvent(LoginState state, LoginEvent event) async {
-    if (event is LoginSubmitted) {
-      this.state = LoginLoading(); // intermediate state
-      try {
-        final token = await auth.login(event.email, event.password);
-        return LoginSuccess(token: token);
-      } catch (e) {
-        return LoginFailure(message: e.toString());
-      }
-    }
-    return reduce(state, event);
-  }
-
-  @override
-  LoginState reduce(LoginState state, LoginEvent event) => switch (event) {
-    LoginSubmitted() => state, // handled in applyEvent
-    LoginReset() => LoginInitial(),
-  };
-
-  /// Re-expose dispatch as public for bloc-style event dispatch.
-  @override
-  Future<void> dispatch(LoginEvent event) => super.dispatch(event);
 }
 ```
 
@@ -295,7 +260,7 @@ final provider = NotifierProvider.family<MyNotifier, MyState, String>(MyNotifier
 
 ## Why This Pattern
 
-This is the classical store pattern (Redux, Elm, MVU) distilled to its simplest useful form for Riverpod. No action creators, no middleware chains, no boilerplate. Just `initialState`, `bindings`, and `reduce`.
+This is the classical store pattern (Redux, Elm, MVU) distilled to its simplest useful form for Riverpod. No action creators, no boilerplate. Just `initialState`, `bindings`, and `reduce` — with an optional `middleware` hook for event interception.
 
 - **Testable**: `reduce()` is a pure function. Test every state transition with zero mocking, no `ProviderContainer`, no framework setup.
 - **Predictable**: One function handles ALL state transitions. No hidden rebuilds, no state resets, no scattered `state =` assignments across methods.

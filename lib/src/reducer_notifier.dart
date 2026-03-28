@@ -64,39 +64,36 @@ abstract class ReducerNotifier<S, E> extends Notifier<S> {
   @protected
   void bindings() {}
 
-  /// Middleware hook. Override to intercept events for logging, analytics,
-  /// conditional event handling, or **async side effects**.
+  /// Middleware hook. Override to intercept, transform, or drop events
+  /// before they reach [reduce].
   ///
-  /// Default implementation delegates to [reduce].
+  /// Return the event (or a modified event) to pass it to [reduce].
+  /// Return `null` to drop/block the event.
+  /// Default implementation passes every event through unchanged.
   ///
   /// Events are processed sequentially — subsequent [dispatch] calls queue
   /// until the current event completes.
-  /// Use `this.state = ...` to emit intermediate states during async work.
   ///
   /// During [build], pending events from [bind]/[bindAsync] are folded
   /// through [reduce] directly, bypassing this hook.
   ///
   /// ```dart
   /// @override
-  /// Future<MyState> applyEvent(MyState state, MyEvent event) async {
-  ///   if (event is SubmitForm) {
-  ///     this.state = state.copyWith(isLoading: true);
-  ///     await api.submit(state.data);
-  ///     return state.copyWith(isLoading: false);
-  ///   }
-  ///   return reduce(state, event);
+  /// Future<MyEvent?> middleware(MyState state, MyEvent event) async {
+  ///   logger.log(event);
+  ///   if (event is Blocked) return null; // drop
+  ///   return event;
   /// }
   /// ```
   @protected
-  Future<S> applyEvent(S state, E event) async => reduce(state, event);
+  Future<E?> middleware(S state, E event) async => event;
 
-  /// Dispatches an [event], triggering [applyEvent] → [reduce].
+  /// Dispatches an [event], triggering [middleware] → [reduce].
   ///
   /// This method is `@protected` — call it from within public methods on
   /// your notifier, not directly from widgets:
   ///
   /// ```dart
-  /// // Cubit style — side effects in the method:
   /// Future<void> submit() async {
   ///   await dispatch(SubmitStarted());
   ///   try {
@@ -106,10 +103,6 @@ abstract class ReducerNotifier<S, E> extends Notifier<S> {
   ///     await dispatch(SubmitFailed(e.toString()));
   ///   }
   /// }
-  ///
-  /// // Bloc style — re-expose dispatch as public:
-  /// @override
-  /// Future<void> dispatch(MyEvent event) => super.dispatch(event);
   /// ```
   ///
   /// During initialization (inside [build]), events are queued and folded
@@ -148,10 +141,13 @@ abstract class ReducerNotifier<S, E> extends Notifier<S> {
 
   Future<void> _processEvent(E event) async {
     final gen = _generation;
-    final next = await applyEvent(state, event);
+    final result = await middleware(state, event);
     if (gen != _generation) return; // stale after rebuild, discard
-    if (!identical(next, state)) {
-      state = next;
+    if (result != null) {
+      final next = reduce(state, result);
+      if (!identical(next, state)) {
+        state = next;
+      }
     }
   }
 
