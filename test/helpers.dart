@@ -105,9 +105,9 @@ class LoggingNotifier extends ReducerNotifier<int, CounterEvent> {
   int initialState() => 0;
 
   @override
-  Future<int> applyEvent(int state, CounterEvent event) async {
+  Future<CounterEvent?> middleware(int state, CounterEvent event) async {
     eventLog.add(event);
-    return reduce(state, event);
+    return event;
   }
 
   @override
@@ -132,10 +132,10 @@ class AsyncCounterNotifier extends ReducerNotifier<int, CounterEvent> {
   int initialState() => 0;
 
   @override
-  Future<int> applyEvent(int state, CounterEvent event) async {
+  Future<CounterEvent?> middleware(int state, CounterEvent event) async {
     eventLog.add(event);
     await Future<void>.delayed(Duration(milliseconds: 10));
-    return reduce(state, event);
+    return event;
   }
 
   @override

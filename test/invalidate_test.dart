@@ -94,15 +94,15 @@ void main() {
   });
 }
 
-/// Notifier with a slow async applyEvent for testing invalidation.
+/// Notifier with a slow async middleware for testing invalidation.
 class _SlowNotifier extends ReducerNotifier<int, CounterEvent> {
   @override
   int initialState() => 0;
 
   @override
-  Future<int> applyEvent(int state, CounterEvent event) async {
+  Future<CounterEvent?> middleware(int state, CounterEvent event) async {
     await Future<void>.delayed(Duration(milliseconds: 50));
-    return reduce(state, event);
+    return event;
   }
 
   @override

@@ -55,9 +55,9 @@ class _BlockingNotifier extends ReducerNotifier<int, CounterEvent> {
   int initialState() => 0;
 
   @override
-  Future<int> applyEvent(int state, CounterEvent event) async {
-    if (event is Decrement) return state; // block
-    return reduce(state, event);
+  Future<CounterEvent?> middleware(int state, CounterEvent event) async {
+    if (event is Decrement) return null; // block
+    return event;
   }
 
   @override
